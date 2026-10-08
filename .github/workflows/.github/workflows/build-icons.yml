@@ -1,0 +1,60 @@
+name: Build Icons
+
+on:
+  push:
+    paths:
+      - 'source/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick webp
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install sharp
+        run: npm install sharp
+
+      - name: Generate icons
+        run: |
+          mkdir -p icons/png icons/ico icons/webp icons/maskable
+
+          for img in source/*.{png,jpg,jpeg}; do
+            [ -f "$img" ] || continue
+            name=$(basename "$img" | sed 's/\.[^.]*$//')
+            echo "🔨 Processing: $name"
+
+            for size in 48 72 96 144 180 192 256 384 512 1024; do
+              convert "$img" -resize ${size}x${size} \
+                -strip -quality 92 "icons/png/${name}-${size}.png"
+            done
+
+            convert "$img" -define icon:auto-resize=256,128,64,48,32,16 \
+              "icons/ico/${name}.ico"
+
+            cwebp -q 90 "$img" -o "icons/webp/${name}.webp" 2>/dev/null || true
+          done
+
+      - name: Generate maskable icons
+        run: node scripts/make-maskable.js
+
+      - name: Commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add icons/
+          git diff --staged --quiet || git commit -m "chore: rebuild icons [skip ci]"
+          git push
